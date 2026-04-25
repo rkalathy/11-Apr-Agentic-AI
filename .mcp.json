@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "datetime": {
+      "command": "/Users/trainer/11 Apr Agentic AI/.venv/bin/python3",
+      "args": [
+        "/Users/trainer/11 Apr Agentic AI/MCP Demo/app.py"
+      ]
+    },
+    "jokes": {
+      "type": "http",
+      "url": "http://jokes-mcp-server.eastus.azurecontainer.io:8000/mcp"
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_PAT_HERE"
+      }
+    }
+  }
+}

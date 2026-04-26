@@ -1,0 +1,318 @@
+{
+  "name": "Market Research Agent - Finance & Stocks",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "2a39b140-57fe-40c7-8b1d-e66a082e23b3",
+      "name": "Every Morning 7 AM (Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "email",
+              "name": "toEmail",
+              "value": "praveen.learning.tech@gmail.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "db5a5827-b521-47f4-8e86-e1f97d2a4e26",
+      "name": "Set Report Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ \"Today is \" + $now.toFormat(\"EEEE, MMMM d, yyyy\") + \". Generate a comprehensive daily finance and stock market research report.\" }}",
+        "options": {
+          "systemMessage": "You are an expert financial analyst and stock market researcher. Produce a comprehensive, actionable daily market research report.\n\nResearch steps — use Google Finance Search for each:\n1. \"top performing stocks today NYSE NASDAQ\"\n2. \"best stocks to buy this week analyst recommendations\"\n3. \"S&P 500 Dow Jones Nasdaq market outlook today\"\n4. \"best investment opportunities finance this week\"\n5. \"stocks to watch or avoid market news today\"\n\nAfter researching, use the Think tool to rank picks by conviction and identify key risks.\n\nOutput a complete professional HTML email with inline CSS. Include:\n- Dark blue (#1e3a5f) header with title \"Daily Market Research Report\" and the date\n- Market Overview: major indices, overall sentiment (bullish/bearish/neutral)\n- Top 5 Stocks to Watch: HTML table with Ticker | Company | Direction | Key Catalyst\n- Best Investment Opportunities: 3-5 picks with brief thesis\n- Key News and Trends: 3-5 bullet points\n- Risks to Watch: 2-3 bullet points\n- Footer: \"This report is AI-generated for informational purposes only and does not constitute financial advice.\"\n\nUse green (#16a34a) for positive movements and red (#dc2626) for negative."
+        }
+      },
+      "id": "07748705-2705-4347-9c10-1b8599ea1550",
+      "name": "Market Research Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        448,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "gpt-5"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "af723ca7-22bd-4631-aa37-ddca2afc4ebd",
+      "name": "GPT-4o",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        448,
+        480
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "ezpFw4NGLIp0NyBc",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "gl": "us",
+          "no_cache": true,
+          "hl": "en"
+        }
+      },
+      "id": "d7da0515-208c-4a0d-946c-23601b44d7fb",
+      "name": "Google Finance Search",
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [
+        608,
+        480
+      ],
+      "credentials": {
+        "serpApi": {
+          "id": "BJbVTe1BXPJL0oBs",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "ea81bf54-dcc5-42c9-80fe-fe02613f7909",
+      "name": "Think and Analyze",
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Set Report Config').item.json.toEmail }}",
+        "subject": "={{ \"📈 Daily Market Research Report - \" + $now.toFormat(\"MMMM d, yyyy\") }}",
+        "message": "={{ $json.output }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Market Research Agent"
+        }
+      },
+      "id": "01abce4e-a2e9-448d-88d4-70b5b1447b7e",
+      "name": "Send Market Research Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        912,
+        144
+      ],
+      "webhookId": "84e39d98-09e5-41d0-a218-c5be6885384a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "q1hfpuTC0Gbn9QYq",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "subject:market research",
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "93ccaef7-7113-46c2-82b9-d83c0adea6f3",
+      "name": "Manual Request via Email",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        288
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "q1hfpuTC0Gbn9QYq",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ Step 1 — Set Your Email\n\nOpen \"Set Report Config\" and change\n\"your-email@example.com\" to your actual email address.\n\nThis is where the daily report will be delivered.",
+        "height": 200,
+        "width": 300,
+        "color": 6
+      },
+      "id": "1d0ac7ce-4ce0-499e-9989-c621e1c22e88",
+      "name": "Sticky Note 92061594",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        128,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Triggers\n\n**Scheduled:** Auto-runs Mon–Fri at 7 AM.\n\n**Manual:** Send yourself an email with \"market research\" anywhere in the subject line to trigger on-demand.",
+        "height": 480,
+        "width": 300,
+        "color": 3
+      },
+      "id": "732bd369-973a-44dc-8a12-ac6373874aa2",
+      "name": "Sticky Note f1dc7bca",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -384,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Step 2 — Credentials\n\n- Gmail Account (OAuth2)\n- OpenAI API Key (GPT-4o)\n- SerpAPI Key\n  → Free tier: serpapi.com\n  → 100 searches/month free\n\nThen activate the workflow.",
+        "height": 200,
+        "width": 620,
+        "color": 5
+      },
+      "id": "9870f1a5-cc87-410a-ad97-2e7832c24491",
+      "name": "Sticky Note 54224f11",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        496,
+        -208
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Morning 7 AM (Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "Set Report Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Report Config": {
+      "main": [
+        [
+          {
+            "node": "Market Research Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Market Research Agent": {
+      "main": [
+        []
+      ]
+    },
+    "GPT-4o": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Market Research Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Finance Search": {
+      "ai_tool": [
+        [
+          {
+            "node": "Market Research Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Think and Analyze": {
+      "ai_tool": [
+        [
+          {
+            "node": "Market Research Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Request via Email": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "dcf1cbb6-b782-4b0f-8ebc-2c9d68d18444",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "instanceId": "0f9878767f2da4e5270c5fd8a918695123b437985586b4dfb4b7fb87112f1d5a"
+  },
+  "id": "m6YiUJTJN0RFRv6l",
+  "tags": []
+}

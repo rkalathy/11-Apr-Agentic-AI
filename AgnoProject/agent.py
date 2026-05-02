@@ -5,9 +5,11 @@ load_dotenv()
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.db.sqlite import SqliteDb
+from agno.tools.yfinance import YFinanceTools
 
 chat = Agent(
     model=Gemini(id="gemini-2.5-pro"),
+    tools=[YFinanceTools()],
     instructions="You are a helpful assistant that answers questions about the stock market.",
     markdown=True,
     db=SqliteDb("memory.db"),
@@ -26,16 +28,16 @@ response_amit_1 = chat.run("What is the current price of Google?", session_id=se
 response_amit_2 = chat.run("What is the current price of Oracle?", session_id=session_id_2)
 
 print("Praveen Session:")
-print(response_praveen_1)
-print(response_praveen_2)   
+print(response_praveen_1.content)
+print(response_praveen_2.content)   
 print("\nAmit Session:")
-print(response_amit_1)
-print(response_amit_2)
+print(response_amit_1.content)
+print(response_amit_2.content)
 
 response_praveen_3 = chat.run("what stocks did i ask about?", session_id=session_id)
 response_amit_3 = chat.run("what stocks did i ask about?", session_id=session_id_2)
 
 print("\nPraveen Session:")
-print(response_praveen_3)
+print(response_praveen_3.content)
 print("\nAmit Session:") 
-print(response_amit_3)      
+print(response_amit_3.content)      

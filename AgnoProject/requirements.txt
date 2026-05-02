@@ -1,7 +1,8 @@
-agno 
-openai 
-ddgs 
-yfinance 
-dotenv 
-google-genai 
+agno
+openai
+ddgs
+yfinance
+dotenv
+google-genai
 sqlalchemy
+python-telegram-bot

@@ -1,555 +1,641 @@
+# CrewAI — A Primer
 
-**Pre-workshop reading — ~30 minutes** _Companion to the 3-Hour Agentic Workflows Workshop_
+**A 100–300 level technical reference for engineers building multi-agent systems with CrewAI.**
 
----
-
-## How to use this document
-
-Read this before the workshop. It explains _why_ Agno is shaped the way it is — the concepts, the architecture, and the design trade-offs — so the hands-on workshop can stay focused on building. If something in the workshop code feels arbitrary, the answer is almost always in here.
-
-Each section has a diagram, a definition, and a "what to remember" callout. You don't need to memorize the API — that's what docs are for. You need to internalize the model.
-
-> **Note:** Diagrams use Mermaid. They render natively on GitHub, GitLab, Notion, Obsidian, VS Code (with the Mermaid preview extension), and most modern markdown viewers.
+> **Version:** 1.0 · **Targets:** CrewAI 0.80+ (Python) · **Last updated:** May 2026
 
 ---
 
-## 1. What problem does Agno solve?
+## How to read this primer
 
-Most "agent frameworks" are libraries for stitching LLM calls together. Agno positions itself differently: it's a **runtime for agentic software**. The distinction matters.
+This document layers content by depth. Read top-to-bottom for a complete picture, or jump to your level.
 
-Traditional software has a predictable execution model:
+| Level | Focus | Audience |
+|---|---|---|
+| **100 — Concepts** | What CrewAI is, why it exists, where it fits | Anyone touching multi-agent code |
+| **200 — Building Blocks** | Agents, tasks, tools, crews, kickoff | Engineers writing crew code |
+| **300 — Architecture in Practice** | Process types, memory, Flows, async, production patterns | Engineers shipping crews |
+
+The core idea before we start: **CrewAI is a role-based multi-agent framework.** You define who the agents are, what tasks they need to complete, and how they coordinate. The framework handles the orchestration. Everything in the API follows from that metaphor.
+
+---
+
+## Table of Contents
+
+1. [Level 100 — Concepts](#level-100--concepts)
+   - [What problem CrewAI solves](#what-problem-crewai-solves)
+   - [The crew metaphor](#the-crew-metaphor)
+   - [Where CrewAI fits in the 2026 landscape](#where-crewai-fits-in-the-2026-landscape)
+2. [Level 200 — Building Blocks](#level-200--building-blocks)
+   - [Agent: the role-based specialist](#agent-the-role-based-specialist)
+   - [Task: a unit of deliverable work](#task-a-unit-of-deliverable-work)
+   - [Tool: how agents act on the world](#tool-how-agents-act-on-the-world)
+   - [Crew: the orchestration layer](#crew-the-orchestration-layer)
+   - [kickoff() and variable injection](#kickoff-and-variable-injection)
+   - [Output formats](#output-formats)
+3. [Level 300 — Architecture in Practice](#level-300--architecture-in-practice)
+   - [Sequential vs Hierarchical processes](#sequential-vs-hierarchical-processes)
+   - [Context flow between tasks](#context-flow-between-tasks)
+   - [Memory](#memory)
+   - [CrewAI Flows](#crewai-flows)
+   - [Async execution](#async-execution)
+   - [Planning and human input](#planning-and-human-input)
+   - [Event listeners](#event-listeners)
+   - [When to use CrewAI and when not to](#when-to-use-crewai-and-when-not-to)
+4. [Glossary](#glossary)
+5. [Where to go next](#where-to-go-next)
+
+---
+
+# Level 100 — Concepts
+
+## What problem CrewAI solves
+
+Single-agent systems hit a ceiling. One agent with too many tools gets confused. One agent tasked with research, writing, editing, and fact-checking simultaneously produces mediocre work on all four dimensions.
+
+Human organizations solved this problem long before LLMs: _specialization plus coordination_. A newsroom has reporters, editors, and fact-checkers — each with a defined role, specific skills, and a clear handoff. CrewAI applies the same pattern to LLM agents.
 
 ```mermaid
 flowchart LR
-    A[Request] --> B[Function<br/>predefined logic]
-    B --> C[Response]
-```
-
-Agentic software does not:
-
-```mermaid
-flowchart LR
-    A[Request] --> B[Agent]
-    B --> C[Response]
-    B <--> D[Tools / DB /<br/>APIs / MCP]
-    B -.->|streams reasoning| E((token stream))
-    B -.->|may pause for<br/>human input| F((paused))
-    B -.->|decides next<br/>action dynamically| G((branch))
-```
-
-The runtime needs to handle three things that traditional web frameworks were never built for:
-
-1. **Streaming + long-running execution** — responses arrive token-by-token over seconds or minutes, not as a single payload.
-2. **Dynamic decision-making** — the model picks actions at runtime; some need approval, some need admin authority.
-3. **Probabilistic execution paths** — the same input can produce different paths through the system.
-
-Agno is built around these three shifts. That's why it bundles a framework (the Python SDK), a runtime (AgentOS, a stateless FastAPI app), and a control plane (the AgentOS UI). Most other frameworks give you only the first.
-
-> **What to remember:** Agno treats streaming, pausing, and resumption as first-class primitives, not afterthoughts. If a feature elsewhere feels weird, it's usually because Agno is solving a problem you haven't hit yet — but will, in production.
-
----
-
-## 2. The three-layer architecture
-
-```mermaid
-flowchart TB
-    subgraph L3["LAYER 3 — Control Plane (browser, os.agno.com)"]
-        UI[Chat • Inspect traces • Manage sessions<br/>Talks to your runtime over HTTPS]
+    subgraph Bad["One agent, everything"]
+        A[Agent\nresearch AND write\nAND edit AND fact-check\nAND format]
     end
 
-    subgraph L2["LAYER 2 — Runtime (your FastAPI app, AgentOS)"]
-        RT[Stateless • Horizontally scalable<br/>Per-user / per-session isolation<br/>Approval enforcement • Tracing • Audit]
+    subgraph Good["Specialized crew"]
+        R[Researcher] --> W[Writer]
+        W --> E[Editor]
+        E --> OUT[Final output]
     end
 
-    subgraph L1["LAYER 1 — Framework (the agno Python package)"]
-        FW[Agent • Team • Workflow<br/>Tools • Knowledge • Memory • Guardrails • MCP<br/>23+ model providers • 100+ toolkits]
-    end
-
-    L3 <-->|REST + streaming| L2
-    L2 <-->|Python imports| L1
-
-    style L3 fill:#e1f0ff,stroke:#0066cc
-    style L2 fill:#fff4e1,stroke:#cc8800
-    style L1 fill:#e8f5e9,stroke:#2e7d32
+    style Bad fill:#ffe1e1,stroke:#cc0000
+    style Good fill:#e8f5e9,stroke:#2e7d32
 ```
 
-The key architectural decision: **the runtime runs in your infrastructure, the control plane runs in your browser**. There is no Agno server in the middle holding your data. Sessions, memory, knowledge, and traces all live in your database. The UI at `os.agno.com` is just a thin client that connects to your local or cloud-hosted AgentOS.
+The framework's three core claims:
 
-This is unusual for a hosted dev tool, and it's the reason Agno can be used in regulated environments (finance, healthcare, defense) without the usual "but does it leak data to the vendor?" review.
+1. **Role clarity improves accuracy.** A model told "you are a senior financial analyst, your goal is to identify earnings risk factors" performs better on that task than a generic assistant.
+2. **Task decomposition makes outputs controllable.** Each task has a defined expected output that can be validated and refined independently.
+3. **Process types match orchestration to problem shape.** Some problems have a known sequence of steps; others need a manager to decide the order dynamically. CrewAI gives you both.
 
-> **What to remember:** Three layers, one direction of trust. Your code at the bottom, your runtime in the middle, a UI on top. The UI is convenience; the framework and runtime are the product.
+## The crew metaphor
 
----
+Every CrewAI concept maps to a workplace analogy:
 
-## 3. The composable units: Agent, Team, Workflow
+| Framework concept | Workplace analogy |
+|---|---|
+| `Agent` | An employee with a job title, goal, and skills |
+| `Task` | A work item with a description and expected deliverable |
+| `Tool` | Software or resources the employee can use |
+| `Crew` | The team, with a process for how work gets done |
+| `Process.sequential` | A linear handoff: A finishes, hands to B, B to C |
+| `Process.hierarchical` | A manager who decides who does what and when |
 
-Agno gives you three units of orchestration. Choosing between them is the most important design decision you'll make.
+This metaphor is load-bearing, not decorative. When you find yourself fighting it — trying to make one agent do radically different things, or writing tasks with vague deliverables — that's the framework telling you something about your design.
+
+## Where CrewAI fits in the 2026 landscape
 
 ```mermaid
 flowchart TB
-    A[Agent<br/>atomic unit<br/>one LLM + tools]
-    A --> T[Team<br/>open-ended collaboration<br/>coordinator picks who speaks next]
-    A --> W[Workflow<br/>predetermined graph of steps<br/>you decide the order]
+    Q{What's your\nprimary need?} --> Q1{Role-based team\ncoordination?}
+    Q --> Q2{Complex stateful\ngraph with branching?}
+    Q --> Q3{Microsoft/Azure\nnative stack?}
+    Q --> Q4{Data pipeline —\nRAG and retrieval?}
 
-    style A fill:#e8f5e9,stroke:#2e7d32
-    style T fill:#fff4e1,stroke:#cc8800
-    style W fill:#e1f0ff,stroke:#0066cc
+    Q1 -->|yes| CREW[CrewAI]
+    Q2 -->|yes| LG[LangGraph]
+    Q3 -->|yes| MAF[Microsoft Agent Framework]
+    Q4 -->|yes| LI[LlamaIndex]
+
+    style CREW fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
+    style LG fill:#e3f2fd,stroke:#1976d2
+    style MAF fill:#fff3e0,stroke:#ef6c00
+    style LI fill:#f3e5f5,stroke:#7b1fa2
 ```
 
-### Agent
+CrewAI's edge in 2026 is **the role metaphor**, the **low boilerplate for standard multi-agent pipelines**, and a growing community of pre-built crews and tools. Its weakness is **production runtime** — it's designed around Python scripts and notebooks; it doesn't give you a stateless HTTP API, horizontal scaling, or built-in HITL pause/resume the way Agno or LangGraph do.
 
-A stateful LLM with tools, memory, instructions, and (optionally) knowledge. The atomic unit.
+Pick CrewAI when the answer to "who does what?" maps naturally to roles humans already understand. If the role metaphor feels forced, a different framework likely fits better.
+
+---
+
+# Level 200 — Building Blocks
+
+## Agent: the role-based specialist
+
+An agent is defined by four fields that together shape the model's behavior:
+
+| Field | Purpose | Analogous to |
+|---|---|---|
+| `role` | Job title — scopes what the agent "is" | Employee's title |
+| `goal` | What the agent is optimizing for | KPI / job objective |
+| `backstory` | Context shaping tone, expertise, perspective | Resume and work history |
+| `tools` | Actions the agent can take | Software on their laptop |
 
 ```python
-agent = Agent(
-    model=Claude(id="claude-sonnet-4-5"),
-    tools=[YFinanceTools()],
-    instructions="...",
-    db=SqliteDb("agent.db"),     # gives it memory + sessions
-    knowledge=Knowledge(...),    # gives it RAG
+from crewai import Agent
+from crewai_tools import SerperDevTool
+
+researcher = Agent(
+    role="Senior Research Analyst",
+    goal="Uncover cutting-edge developments in {topic} with rigorous sourcing",
+    backstory="""You work at a leading tech think tank. Your expertise is identifying
+    emerging trends before they become mainstream. You distrust hype and demand
+    primary sources.""",
+    tools=[SerperDevTool()],
+    llm="openai/gpt-4o",   # or any LiteLLM string
+    verbose=True,
 )
 ```
 
-Use an agent when one specialist with the right tools can do the job. Most production systems are 70% single agents.
+`role`, `goal`, and `backstory` are injected into the system prompt verbatim. This is not decoration — the same model with a well-crafted backstory outperforms a generic assistant on specialized tasks. Treat these fields as prompt engineering.
 
-### Team
+**Per-agent LLM.** Every agent can use a different model. Assign a cheap fast model (GPT-4o-mini) to triage and routing agents, a powerful model (GPT-4o, Claude Sonnet) to synthesis and writing agents. `llm` accepts any LiteLLM model string: `"anthropic/claude-sonnet-4-6"`, `"openai/gpt-4o-mini"`, `"ollama/llama3"`.
 
-Multiple agents collaborating, with a **coordinator LLM** deciding who speaks next at runtime.
+**`max_iter` and `max_retry_limit`.** An agent has a default maximum of 20 reasoning iterations before it must output a final answer. Set lower for speed, higher for complex tasks. `max_retry_limit` controls how many times a failing tool call is retried.
 
-```mermaid
-flowchart TB
-    C[Team Coordinator<br/>an LLM picking next member]
-    C --> A[Member<br/>Agent A]
-    C --> B[Member<br/>Agent B]
-    C --> D[Member<br/>Agent C]
-    A -.->|response| C
-    B -.->|response| C
-    D -.->|response| C
+## Task: a unit of deliverable work
 
-    style C fill:#fff4e1,stroke:#cc8800
-```
-
-Use a team when the _path_ through the work is open-ended. "Research this stock" is open-ended — you don't know in advance whether you need fundamentals first, or competitor analysis, or both. The coordinator decides.
-
-### Workflow
-
-A **deterministic graph** of steps. You decide the order. The model only decides what each step says, not whether or in what order steps run (with one exception — `Router`).
-
-```mermaid
-flowchart LR
-    S1[Step] --> P{Parallel}
-    P --> A[A]
-    P --> B[B]
-    P --> C[C]
-    A --> S2[Step]
-    B --> S2
-    C --> S2
-    S2 --> CD{Condition}
-    CD -->|if| L[Loop]
-    CD -->|else| S3[Step]
-    L --> S3
-
-    style P fill:#e1f0ff,stroke:#0066cc
-    style CD fill:#e1f0ff,stroke:#0066cc
-    style L fill:#e1f0ff,stroke:#0066cc
-```
-
-Use a workflow when you can name the stages in advance: classify → route → respond → review. Workflows are easier to debug, easier to test, and easier to optimize than teams. Reach for them whenever you can.
-
-> **What to remember:** Workflow > Team > Agent in _predictability_. Agent < Team < Workflow in _upfront design effort_. Start small. Climb the ladder only when the current tier stops being enough.
-
----
-
-## 4. The five workflow primitives
-
-Every Agno workflow is built from five primitives. Once you grok these five shapes, you can compose any orchestration pattern.
-
-### 4.1 Step — the atomic node
-
-A `Step` runs exactly one of: an `agent`, a `team`, or a custom `executor` function. It takes a `StepInput` and returns a `StepOutput`.
-
-```mermaid
-flowchart LR
-    I[StepInput] --> S[Step<br/>agent OR team<br/>OR function]
-    S --> O[StepOutput]
-
-    style S fill:#e8f5e9,stroke:#2e7d32
-```
-
-The `executor` function escape hatch is critical. When you need deterministic logic between LLM calls — parsing, validation, math, formatting — you write Python. You don't ask a model to do it.
-
-### 4.2 Parallel — fan out, fan in
-
-```mermaid
-flowchart LR
-    I[StepInput] --> P{Parallel}
-    P --> A[Step A]
-    P --> B[Step B]
-    P --> C[Step C]
-    A --> N[Next step receives<br/>all three outputs]
-    B --> N
-    C --> N
-
-    style P fill:#e1f0ff,stroke:#0066cc
-```
-
-`Parallel(step_a, step_b, step_c)` runs them concurrently. The next step can pull each output by name via `step_input.get_step_content("step_a")`. Latency becomes `max(t_a, t_b, t_c)` instead of the sum. Use for independent fan-out work like multi-source research.
-
-### 4.3 Condition — if-branch
-
-```mermaid
-flowchart LR
-    I[StepInput] --> E{evaluator<br/>returns bool}
-    E -->|True| T[if_steps]
-    E -->|False| F[else_steps<br/>optional]
-    T --> N[Next]
-    F --> N
-
-    style E fill:#e1f0ff,stroke:#0066cc
-```
-
-`Condition(evaluator=fn, steps=[...], else_steps=[...])`. The evaluator is a Python function returning bool. Use for "only do X when Y" gates — like running expensive analysis only on high-priority tickets, or invoking HITL only on irreversible actions.
-
-### 4.4 Router — pick one branch dynamically
-
-```mermaid
-flowchart LR
-    I[StepInput] --> S{selector<br/>returns chosen branch}
-    S -->|picks one| A[branch A]
-    S -->|picks one| B[branch B]
-    S -->|picks one| C[branch C]
-    S -->|picks one| D[branch D]
-    A --> N[Next]
-    B --> N
-    C --> N
-    D --> N
-
-    style S fill:#e1f0ff,stroke:#0066cc
-```
-
-`Router(selector=fn, choices=[...])`. The selector is a Python function that returns `List[Step]` — the chosen branch. Use for classifier-driven dispatch: a triage agent labels the input, the router runs the matching specialist.
-
-> **Condition vs Router:** Condition is "if/else" (boolean). Router is "switch/case" (N-way pick). They look similar, but conditions branch on _whether_, routers branch on _which_.
-
-### 4.5 Loop — repeat until done
-
-```mermaid
-flowchart LR
-    I[StepInput] --> S[Steps run<br/>in order]
-    S --> E{end_condition?<br/>or max_iterations?}
-    E -->|No| S
-    E -->|Yes| N[Next]
-
-    style E fill:#e1f0ff,stroke:#0066cc
-```
-
-`Loop(steps=[...], end_condition=fn, max_iterations=N)`. Each iteration runs all steps in order; the end-condition is evaluated after each iteration with the list of step outputs from that iteration. Use for retry-until-good: draft → review → revise → review → ship.
-
-### Composition
-
-The five primitives nest freely — every primitive is itself a step. A real workflow looks like this:
-
-```mermaid
-flowchart TB
-    W[Workflow] --> S1[Step: classify]
-    S1 --> R{Router}
-    R --> B1[billing branch]
-    R --> B2[technical branch]
-    R --> B3[refund branch]
-    B1 --> L[Loop max=3]
-    B2 --> L
-    B3 --> L
-    L --> QA[Step: qa_review]
-    QA --> RV[Step: revise]
-    RV --> C{Condition<br/>if high_value}
-    C -->|yes| H[Step: hitl_approval<br/>requires_confirmation=True]
-    C -->|no| END[Done]
-    H --> END
-
-    style R fill:#e1f0ff,stroke:#0066cc
-    style L fill:#e1f0ff,stroke:#0066cc
-    style C fill:#e1f0ff,stroke:#0066cc
-    style H fill:#ffe1e1,stroke:#cc0000
-```
-
-That's the entire Workflow 2 from the workshop, expressed as a tree.
-
-> **What to remember:** Five shapes — Step, Parallel, Condition, Router, Loop. Everything else is composition.
-
----
-
-## 5. State: sessions, memory, knowledge
-
-This is where Agno diverges hardest from "just a wrapper around the OpenAI API." Agentic systems need three different kinds of state, and confusing them is the #1 cause of broken agents.
-
-```mermaid
-flowchart TB
-    subgraph State["Three kinds of state"]
-        SH["<b>Session History</b><br/>'what did we just say?'<br/>raw message log<br/>per-session"]
-        M["<b>Memory</b><br/>'Sarah prefers email'<br/>learned facts about user<br/>persists across sessions"]
-        K["<b>Knowledge</b><br/>'what is in the 10-K filing?'<br/>curated documents in a vector store<br/>retrieved on demand (Agentic RAG)"]
-    end
-
-    SH --> DB[(Your Database<br/>SQLite / Postgres)]
-    M --> DB
-    K --> DB
-
-    style SH fill:#e1f0ff,stroke:#0066cc
-    style M fill:#fff4e1,stroke:#cc8800
-    style K fill:#e8f5e9,stroke:#2e7d32
-```
-
-### Session history
-
-Raw conversation messages, scoped to a `session_id`. When you set `add_history_to_context=True` and `num_history_runs=3` on an agent, Agno injects the last three turns into each new prompt. This is what "remembers what we just discussed" means.
-
-### Memory
-
-Distilled, durable facts about a user — extracted automatically by an LLM during conversations. "Sarah works in finance, prefers concise responses, is researching NVDA." Lives across sessions. Indexed by `user_id`. This is what "the agent learns over time" means.
-
-### Knowledge
-
-Curated documents (PDFs, URLs, text) chunked, embedded, and stored in a vector database. Retrieved on demand via similarity search when the agent decides it needs grounding. This is RAG, but the agent — not the framework — chooses when to retrieve. Hence "Agentic RAG."
-
-> **What to remember:** History is what was said. Memory is what was learned. Knowledge is what was given. They are _not_ interchangeable, and trying to do all three with one mechanism (e.g., "just stuff everything into the context window") is how production agents become slow, expensive, and confused.
-
----
-
-## 6. Tools, MCP, and the integration surface
-
-Agents act through tools. Agno provides ~100 built-in toolkits (web search, finance, files, GitHub, Slack, calendars, …) and supports two ways to add more:
-
-```mermaid
-flowchart TB
-    A[Agent] --> BT[Built-in Toolkit<br/>DuckDuckGo, YFinance,<br/>Slack, GitHub, ...]
-    A --> PT[Your Python function<br/>decorated as a tool]
-    A --> MCP[MCP Server<br/>any language, any host]
-
-    style A fill:#e8f5e9,stroke:#2e7d32
-    style BT fill:#e1f0ff,stroke:#0066cc
-    style PT fill:#fff4e1,stroke:#cc8800
-    style MCP fill:#f3e5f5,stroke:#7b1fa2
-```
-
-### Built-in toolkits
-
-`from agno.tools.duckduckgo import DuckDuckGoTools`. Drop in and go.
-
-### Custom Python tools
-
-Any Python function with type hints can become a tool. Decorate it, attach it to an agent, you're done.
+A task defines what needs to be done, what the result should look like, and which agent does it.
 
 ```python
-from agno.tools import tool
+from crewai import Task
 
-@tool
-def get_weather(city: str) -> str:
-    """Get current weather for a city."""
+research_task = Task(
+    description="""Investigate the latest AI developments in {topic}.
+    Focus on: key players, recent breakthroughs, and market implications.
+    Prioritize information from the past 6 months.""",
+    expected_output="""A structured report with:
+    - Executive summary (3 sentences)
+    - 5 key developments with source citations
+    - Market implication for each development""",
+    agent=researcher,
+    output_file="research_report.md",   # optional: write output to disk
+)
+```
+
+`expected_output` is the most important field. The LLM uses it to know when the task is done. Vague expected outputs ("a good summary") produce vague results. Specific, structured expected outputs ("a JSON object with fields X, Y, Z") produce structured, predictable results.
+
+**Structured output.** Bind a Pydantic model to get typed, validated output:
+
+```python
+from pydantic import BaseModel
+
+class ResearchReport(BaseModel):
+    executive_summary: str
+    key_developments: list[str]
+    market_implications: dict[str, str]
+
+research_task = Task(
+    description="Investigate AI trends in {topic}.",
+    expected_output="A structured research report.",
+    output_pydantic=ResearchReport,
+    agent=researcher,
+)
+
+crew.kickoff(inputs={"topic": "AI agents"})
+# task.output.pydantic → ResearchReport instance, fully validated
+```
+
+**Async tasks.** Set `async_execution=True` to run a task in parallel with other async tasks. The crew will wait for all async tasks to complete before passing to the next synchronous task.
+
+## Tool: how agents act on the world
+
+Tools are functions an agent can invoke. CrewAI supports three sources:
+
+```mermaid
+flowchart LR
+    AG[Agent] --> BT[crewai_tools builtins\nSerperDev, FileRead,\nWebScraper, GitHub, ...]
+    AG --> PT[Your @tool function\nany Python logic]
+    AG --> LT[LangChain tools\ndirect compatibility]
+
+    style AG fill:#e8f5e9,stroke:#2e7d32
+    style BT fill:#e1f0ff,stroke:#0066cc
+    style PT fill:#fff4e1,stroke:#cc8800
+    style LT fill:#f3e5f5,stroke:#7b1fa2
+```
+
+Custom tools use the `@tool` decorator. The docstring becomes the tool description — write it for the LLM, not for humans:
+
+```python
+from crewai.tools import tool
+
+@tool("Stock Price Fetcher")
+def get_stock_price(ticker: str) -> str:
+    """Fetches the real-time stock price for a given ticker symbol.
+    Use this when you need the current market price of a publicly traded company.
+    Input: ticker symbol (e.g. 'AAPL', 'NVDA').
+    Output: current price as a string."""
+    # your implementation
+    return f"${ticker}: 142.50"
+```
+
+For tools with complex arguments, use a Pydantic `BaseModel` as the `args_schema`:
+
+```python
+from pydantic import BaseModel, Field
+
+class SearchInput(BaseModel):
+    query: str = Field(description="The search query")
+    max_results: int = Field(default=5, description="Max number of results")
+
+@tool(args_schema=SearchInput)
+def web_search(query: str, max_results: int = 5) -> list[str]:
+    """Search the web and return URLs of relevant pages."""
     ...
 ```
 
-### MCP (Model Context Protocol)
+**Tool caching.** Tools are cached by default — identical calls return cached results without re-execution. Disable per-tool with `cache_function=lambda: False` when freshness matters (live prices, current time).
 
-The emerging standard for connecting LLMs to external services securely. Agno is a first-class MCP client — point it at an MCP server URL and the server's tools become callable by your agent automatically.
+## Crew: the orchestration layer
+
+A crew binds agents, tasks, and a process type together:
 
 ```python
-from agno.tools.mcp import MCPTools
-agent = Agent(
-    model=Claude(id="claude-sonnet-4-5"),
-    tools=[MCPTools(url="https://docs.agno.com/mcp")],
+from crewai import Crew, Process
+
+crew = Crew(
+    agents=[researcher, writer, editor],
+    tasks=[research_task, write_task, edit_task],
+    process=Process.sequential,
+    verbose=True,
+    output_log_file="crew_log.txt",   # optional: log all activity
 )
 ```
 
-MCP matters because it decouples tool authorship from agent authorship. Your security team writes the MCP server with proper auth, audit, and rate limits; your agent team consumes it without seeing credentials.
+The `Crew` is the object you call `kickoff()` on. It is stateless between runs — you can call `kickoff()` multiple times with different inputs.
 
-> **What to remember:** Built-in for the common case, Python decorator for the bespoke case, MCP for cross-team / cross-org integration. All three coexist on the same agent.
+**Manager LLM.** For `Process.hierarchical`, you must supply the LLM that will act as the manager:
+
+```python
+crew = Crew(
+    agents=[researcher, writer, editor],
+    tasks=[analysis_task],
+    process=Process.hierarchical,
+    manager_llm="openai/gpt-4o",
+)
+```
+
+## kickoff() and variable injection
+
+`kickoff()` starts the crew. Pass an `inputs` dict to inject variables into any `{placeholder}` in agent roles, goals, backstories, and task descriptions:
+
+```python
+result = crew.kickoff(inputs={
+    "topic": "AI in healthcare",
+    "target_audience": "non-technical executives",
+})
+```
+
+Variables resolve across the entire crew — one `inputs` dict reaches every agent and task.
+
+**Batch execution.** Run the same crew against a list of inputs:
+
+```python
+results = crew.kickoff_for_each(inputs=[
+    {"topic": "AI in healthcare"},
+    {"topic": "AI in finance"},
+    {"topic": "AI in education"},
+])
+```
+
+**The `CrewOutput` object.** `kickoff()` returns a `CrewOutput` with:
+- `.raw` — the final task's output as a string
+- `.pydantic` — parsed Pydantic object (if `output_pydantic` was set on the final task)
+- `.json_dict` — parsed JSON dict (if `output_json` was set)
+- `.tasks_output` — list of `TaskOutput` for every task in the crew
+
+## Output formats
+
+Every task and crew has three output format options, set on the final task:
+
+| Field on Task | Type | Returns |
+|---|---|---|
+| (default) | string | `.raw` — the LLM's raw text response |
+| `output_json=MyModel` | Pydantic model | `.json_dict` — validated dict |
+| `output_pydantic=MyModel` | Pydantic model | `.pydantic` — validated model instance |
+
+Choose `output_pydantic` when the result feeds into more code. Choose `output_file` when the result is a deliverable (a markdown report, a Python script).
 
 ---
 
-## 7. Human-in-the-loop, three flavors
+# Level 300 — Architecture in Practice
 
-Production agents do irreversible things — issue refunds, send emails, place trades. Agno bakes HITL into the runtime, not as a callback you wire up yourself. There are three patterns:
+## Sequential vs Hierarchical processes
+
+This is the most consequential design decision in a crew.
 
 ```mermaid
 flowchart TB
-    subgraph HITL["Three HITL patterns"]
-        UC["<b>1. User Confirmation</b><br/>requires_confirmation=True<br/>'Approve this $250 refund?'<br/>Pauses run; resumes on confirm/reject"]
-        UI["<b>2. User Input</b><br/>requires_user_input=True<br/>+ input_schema<br/>'I need a billing address'<br/>Pauses, waits for structured input"]
-        ET["<b>3. External Tool Execution</b><br/>external_execution=True<br/>'I want to call delete_account()<br/>You run it; I will wait for the result'"]
+    subgraph SEQ["Sequential — you define the order"]
+        direction LR
+        T1[Task 1\nResearch] --> T2[Task 2\nWrite] --> T3[Task 3\nEdit]
     end
 
-    style UC fill:#e1f0ff,stroke:#0066cc
-    style UI fill:#fff4e1,stroke:#cc8800
-    style ET fill:#f3e5f5,stroke:#7b1fa2
+    subgraph HIE["Hierarchical — a manager LLM defines the order"]
+        direction TB
+        M[Manager Agent\nLLM-driven delegation\nand evaluation]
+        M --> A1[Agent A]
+        M --> A2[Agent B]
+        M --> A3[Agent C]
+        A1 -.->|result| M
+        A2 -.->|result| M
+        A3 -.->|result| M
+    end
+
+    style SEQ fill:#e8f5e9,stroke:#2e7d32
+    style HIE fill:#e1f0ff,stroke:#0066cc
+    style M fill:#fff4e1,stroke:#cc8800
 ```
 
-The mechanic is the same in all three: the workflow run **pauses**, persists its state to the database, and returns a `RunPaused`event with a `run_id`. Some other system — a Slack bot, an approval app, a queue worker — receives the run_id and eventually calls `workflow.continue_run(run_id, ...)`.
+### Sequential
 
-```mermaid
-sequenceDiagram
-    participant W as Workflow
-    participant DB as Database
-    participant X as External system<br/>(Slack bot, approval UI,<br/>queue worker)
+Tasks run in definition order. The output of each task is automatically passed as context to the next. Simple, predictable, token-efficient, easy to debug.
 
-    W->>W: workflow.run() starts
-    W->>W: Reaches step requiring HITL
-    W->>DB: Save run state, generate run_id
-    W-->>X: Emit RunPaused(run_id)
-    Note over W,X: ──── async gap ────<br/>seconds, hours, days
-    X->>X: Human reviews and decides
-    X->>W: continue_run(run_id, confirm=True)
-    W->>DB: Load saved state
-    W->>W: Resume from paused step
-    W-->>X: Final result
+**Use when:** The stages are known in advance. "Research → Write → Edit" is sequential. The vast majority of production crews are sequential.
+
+### Hierarchical
+
+A manager LLM decides which agent to delegate each sub-task to, reviews the response, and determines when the goal is met. You define the agents and their capabilities; the manager figures out the execution order.
+
+**Use when:** The work is genuinely open-ended and the right sequence of steps isn't knowable until you start. "Produce a comprehensive risk analysis" might require different sub-investigations depending on what the researcher finds.
+
+**Costs:** Hierarchical processes use significantly more tokens (the manager LLM evaluates every response), are harder to debug (the execution path is dynamic), and can loop unexpectedly. Start sequential. Only switch to hierarchical after confirming the problem is genuinely open-ended.
+
+> **Rule of thumb:** If you can write the stages on a whiteboard before running the crew, use sequential. If you can't, hierarchical is worth the cost.
+
+## Context flow between tasks
+
+In a sequential crew, each task automatically receives the output of the immediately preceding task as context. For non-adjacent tasks, use explicit `context`:
+
+```python
+edit_task = Task(
+    description="Edit the article for clarity, accuracy, and tone.",
+    expected_output="A polished final article ready for publication.",
+    agent=editor,
+    context=[research_task, write_task],  # receives both, not just write_task
+)
 ```
-
-> **What to remember:** HITL in Agno is a pause-and-resume primitive backed by your database, not a synchronous "wait for input" call. That's what makes it work across web requests, queue workers, and human approval times measured in hours.
-
----
-
-## 8. The runtime: AgentOS
-
-`AgentOS` is the FastAPI app that exposes your agents/teams/workflows as a production API. The two key claims:
-
-**Stateless.** No request affinity. Any AgentOS instance can serve any user. State lives in the database, not in the process. Scale horizontally by adding pods; no sticky sessions, no consistent hashing.
-
-**Session-scoped.** Each request carries a `session_id` (and optionally `user_id`). The runtime hydrates the relevant session from the database, runs the agent, persists the new state, and returns. Your agent code never has to think about it.
-
-```mermaid
-flowchart TB
-    LB[Load Balancer<br/>no affinity needed]
-    LB --> I1[AgentOS<br/>instance 1]
-    LB --> I2[AgentOS<br/>instance 2]
-    LB --> I3[AgentOS<br/>instance 3]
-    I1 --> DB[(Postgres<br/>sessions • memories<br/>knowledge index<br/>traces • paused runs)]
-    I2 --> DB
-    I3 --> DB
-
-    style LB fill:#fff4e1,stroke:#cc8800
-    style DB fill:#e8f5e9,stroke:#2e7d32
-```
-
-Endpoints you get for free:
-
-```
-GET    /health
-GET    /agents | /teams | /workflows
-POST   /agents/{id}/runs         ← start a run, optional streaming
-POST   /workflows/{id}/runs      ← same, for workflows
-POST   /runs/{run_id}/continue   ← resume a paused HITL run
-GET    /sessions/{id}            ← read history
-DELETE /sessions/{id}            ← end session
-GET    /docs                     ← OpenAPI
-```
-
-> **What to remember:** AgentOS is to agents what FastAPI was to Python web APIs. It collapses "build the thing" and "ship the thing" into one decision.
-
----
-
-## 9. Performance and why it matters
-
-Agno is fast at agent instantiation — orders of magnitude faster than graph-based frameworks like LangGraph (the team reports ~3 µs to instantiate an agent and ~3.75 KiB of memory per agent). This sounds like a benchmark vanity stat, but it has real consequences.
-
-In a stateless runtime, every request creates fresh agent instances from configuration. If instantiation is slow, your p99 latency suffers and your concurrency ceiling drops. If instantiation is fast, you can confidently spin up agents per-request without a hot-path optimization budget.
 
 ```mermaid
 flowchart LR
-    R[1 Receive<br/>request] --> L[2 Load session<br/>from db<br/>~10 ms I/O]
-    L --> I[3 Instantiate<br/>agent<br/>Agno: µs<br/>Graphs: ms]
-    I --> RUN[4 Run agent<br/>seconds<br/>LLM bound]
-    RUN --> P[5 Persist new<br/>state<br/>~10 ms I/O]
-    P --> RES[6 Return<br/>response]
-
-    style I fill:#e8f5e9,stroke:#2e7d32
-    style RUN fill:#fff4e1,stroke:#cc8800
+    T1[Task 1: Research] --> T2[Task 2: Write]
+    T2 --> T3[Task 3: Edit]
+    T1 -.->|explicit context=| T3
 ```
 
-End-to-end latency is dominated by the LLM. But **throughput** under concurrent load is dominated by everything else, and step 3 is where graph frameworks pay a hidden tax.
+For very long outputs that would overflow context, write intermediate results to files with `output_file="path.md"` and have downstream agents read them with a `FileReadTool`.
 
-> **What to remember:** Agno's performance philosophy is "make instantiation free, and you stop having to cache things you shouldn't have to cache." Statelessness becomes affordable.
+## Memory
 
----
+CrewAI provides four memory types. Enable them on the crew:
 
-## 10. The Five Levels of Agentic Software
-
-Ashpreet Bedi (Agno's founder) published a useful staging framework that maps cleanly to how you'll grow systems built on Agno:
+```python
+crew = Crew(
+    agents=[...],
+    tasks=[...],
+    memory=True,   # enables short-term + long-term + entity
+    embedder={
+        "provider": "openai",
+        "config": {"model": "text-embedding-3-small"},
+    },
+)
+```
 
 ```mermaid
-flowchart BT
-    L1[Level 1<br/>LLM with tools, no state<br/>Just function calling]
-    L2[Level 2<br/>Agents with tools + instructions<br/>The minimum viable agent]
-    L3[Level 3<br/>Agents with knowledge + storage<br/>RAG + sessions in a database]
-    L4[Level 4<br/>Self-learning agents<br/>Memory writes back, shared context]
-    L5[Level 5<br/>Multi-agent, self-learning systems<br/>Teams + workflows + memory + culture]
+flowchart TB
+    subgraph Memory["Four memory types"]
+        ST["Short-Term\nRAG-based store of recent\ntask interactions\nCleared between runs"]
+        LT["Long-Term\nSQLite-backed successful\noutcomes and decisions\nPersists across runs"]
+        EN["Entity\nPeople, companies, concepts\nmentioned during the run\nIn-run only"]
+        UM["User Memory\nFacts and preferences\nfor a specific user_id\nPersists across runs"]
+    end
 
-    L1 --> L2 --> L3 --> L4 --> L5
-
-    style L1 fill:#f5f5f5,stroke:#666
-    style L2 fill:#e8f5e9,stroke:#2e7d32
-    style L3 fill:#e1f0ff,stroke:#0066cc
-    style L4 fill:#fff4e1,stroke:#cc8800
-    style L5 fill:#f3e5f5,stroke:#7b1fa2
+    style ST fill:#e1f0ff,stroke:#0066cc
+    style LT fill:#e8f5e9,stroke:#2e7d32
+    style EN fill:#fff4e1,stroke:#cc8800
+    style UM fill:#f3e5f5,stroke:#7b1fa2
 ```
 
-The key insight: **complexity is never free.** Every level adds debugging surface, latency, cost, and ways to fail. The discipline is to start at Level 1 and only climb when you've actually exhausted the current level's capabilities.
+| Memory type | Persists across runs? | Use for |
+|---|---|---|
+| Short-term | No | Recalling context from earlier in the same run via RAG |
+| Long-term | Yes | Learning from past runs — which approaches worked |
+| Entity | No | Tracking relationships between named things in a run |
+| User | Yes | Personalizing behavior per `user_id` |
 
-In practice, most production systems live at Level 3. The workshop's three workflows correspond roughly to:
+Memory adds latency (embedding calls) and cost. Don't enable it for short, stateless pipelines. Enable it when runs are long enough that earlier context gets lost, or when cross-run learning matters.
 
-- **Workflow 1** → Level 2 (agents + tools, plus parallel orchestration)
-- **Workflow 2** → Level 3 (sessions, HITL, persistent state)
-- **Workflow 3** → Level 4 (multi-agent team, served as runtime)
+## CrewAI Flows
 
-> **What to remember:** Multi-agent orchestration looks impressive in demos and breaks first in production. Resist the urge to start there. Level 3 with a single well-instrumented agent beats Level 5 with three flaky ones, every time.
+Flows are the structured pipeline model in CrewAI, built on Python class methods and event decorators. Where Crews organize work around _agents and tasks_, Flows organize work around _methods and events_.
 
----
+```mermaid
+flowchart LR
+    S[start method] -->|emit result| A[method A\n@listen]
+    A -->|emit| B[method B\n@listen]
+    A -->|emit| C[method C\n@listen]
+    B --> D{router\n@router}
+    D -->|branch_1| E[method E]
+    D -->|branch_2| F[method F]
+```
 
-## 11. When to use Agno (and when not to)
+```python
+from crewai.flow.flow import Flow, listen, start, router
+from pydantic import BaseModel
 
-### Use Agno when
+class ArticleFlow(Flow):
+    class State(BaseModel):
+        topic: str = ""
+        research: str = ""
+        draft: str = ""
 
-- You want to ship the agent as an API, not just run it from a notebook.
-- You need persistent state — sessions, memory, knowledge — without writing the persistence layer yourself.
-- You care about data residency: agents run in your cloud, data in your database.
-- You want predictable orchestration (Workflows) for the parts of the system that have to be reliable, with Teams for the parts that don't.
-- You're integrating across providers and want one API across Claude, GPT-5, Gemini, Llama, etc.
+    @start()
+    def initialize(self):
+        self.state.topic = "AI in healthcare"
+        return self.state.topic
+
+    @listen(initialize)
+    def run_research(self, topic: str):
+        result = ResearchCrew().crew().kickoff(inputs={"topic": topic})
+        self.state.research = result.raw
+        return self.state.research
+
+    @listen(run_research)
+    def run_writing(self, research: str):
+        result = WritingCrew().crew().kickoff(inputs={"research": research})
+        self.state.draft = result.raw
+        return self.state.draft
+
+flow = ArticleFlow()
+flow.kickoff()
+print(flow.state.draft)
+```
+
+**Flows vs Crews:**
+
+| | Crew | Flow |
+|---|---|---|
+| Unit of work | Task assigned to an Agent | Method on a Flow class |
+| Orchestration | Process type (sequential/hierarchical) | `@listen`, `@router` decorators |
+| State | Passed as task context | Typed `self.state` Pydantic model |
+| Best for | Role-based multi-agent work | Pipelines that combine multiple crews, branching, code |
+
+**When to use Flows:** when you need to orchestrate _multiple crews_ in sequence or parallel, mix in deterministic Python logic between crew runs, or explicitly branch based on intermediate results. Flows wrap Crews; Crews don't wrap Flows.
+
+**`@router`** lets a method return a string that selects which downstream `@listen` method runs next — the N-way equivalent of an `if/else`:
+
+```python
+@router(run_research)
+def route_by_complexity(self, research: str) -> str:
+    if len(research) > 5000:
+        return "complex"
+    return "simple"
+
+@listen("complex")
+def deep_analysis(self, research: str): ...
+
+@listen("simple")
+def quick_summary(self, research: str): ...
+```
+
+## Async execution
+
+For parallel work, mark tasks as async and use the async kickoff:
+
+```python
+research_task = Task(..., async_execution=True)
+data_task = Task(..., async_execution=True)
+synthesis_task = Task(...)  # waits for both async tasks above
+
+# Both async tasks run in parallel; synthesis waits for both
+result = crew.kickoff(inputs={"topic": "AI trends"})
+
+# Async kickoff — non-blocking
+import asyncio
+
+async def main():
+    result = await crew.kickoff_async(inputs={"topic": "AI trends"})
+
+asyncio.run(main())
+```
+
+For batch async runs across many inputs:
+
+```python
+results = await crew.kickoff_for_each_async(inputs=[
+    {"topic": "AI in healthcare"},
+    {"topic": "AI in finance"},
+    {"topic": "AI in education"},
+])
+```
+
+Async batch runs are the primary way to achieve throughput with CrewAI. Sequential `kickoff_for_each` is slow; `kickoff_for_each_async` runs all inputs concurrently (bound by your rate limits).
+
+## Planning and human input
+
+**Planning** adds an LLM pre-pass that creates an execution plan before any task runs. The plan is injected as context into all tasks:
+
+```python
+crew = Crew(
+    agents=[...],
+    tasks=[...],
+    planning=True,
+    planning_llm="openai/gpt-4o-mini",   # use a cheaper model for planning
+)
+```
+
+Cost: one extra LLM call per run. Value: measurably better coherence on complex, multi-step tasks where getting the strategy right before execution matters.
+
+**Human input** pauses a task at the CLI and waits for operator input before proceeding:
+
+```python
+review_task = Task(
+    description="Review and approve the final draft.",
+    expected_output="Approval or a list of required changes.",
+    agent=editor,
+    human_input=True,
+)
+```
+
+This is synchronous and CLI-only — appropriate for development workflows and manual approval pipelines. It is not suited for production async APIs.
+
+## Event listeners
+
+CrewAI emits typed events throughout execution. Hook into them for logging, monitoring, or custom routing:
+
+```python
+from crewai.utilities.events import (
+    TaskCompletedEvent,
+    AgentActionTakenEvent,
+    ToolUsageEvent,
+)
+from crewai.utilities.events.base_event_listener import BaseEventListener
+
+class ProductionLogger(BaseEventListener):
+    def on_task_completed(self, source, event: TaskCompletedEvent):
+        # send to your observability platform
+        metrics.record("task_completed", {
+            "task": event.task.description[:50],
+            "agent": event.task.agent.role,
+        })
+
+    def on_tool_usage(self, source, event: ToolUsageEvent):
+        if event.tool_name == "web_search":
+            metrics.increment("web_search_calls")
+
+crew = Crew(agents=[...], tasks=[...])
+crew.add_listener(ProductionLogger())
+```
+
+Key events: `CrewKickoffStartedEvent`, `CrewKickoffCompletedEvent`, `TaskStartedEvent`, `TaskCompletedEvent`, `AgentActionTakenEvent`, `ToolUsageEvent`, `ToolUsageErrorEvent`.
+
+Parse `verbose` output for development. Use event listeners for production monitoring — events are stable, verbose output is not.
+
+## When to use CrewAI and when not to
+
+### Use CrewAI when
+
+- The problem maps naturally to "different specialists, different tasks" — research + writing, analysis + review, code + test.
+- You want role-based prompting with structured task handoffs and minimal boilerplate.
+- Output quality per task matters — specialization pays off on complex, multi-step work.
+- You're iterating quickly and want a framework that mirrors how you'd describe the work to a team.
 
 ### Look elsewhere when
 
-- You need TypeScript/JavaScript — Agno is Python-only as of v2.5.
-- You're building a one-off script and don't need persistence or HTTP exposure. (Use the model SDK directly; you'll have less to learn.)
-- Your orchestration is genuinely a complex stateful graph with many cycles and conditional edges — LangGraph's state-machine model may fit better.
-- You're doing pure prompt engineering with no tool use, no memory, no multi-step flows. You don't need a framework for that.
-
-> **What to remember:** Agno's sweet spot is "production agentic system, Python shop, you control the deploy target." If three of those four are true, it's the strongest choice on the market.
+- You need a **production HTTP API** with stateless execution, horizontal scaling, and HITL pause/resume — Agno is built for that; CrewAI is not.
+- You need **fine-grained graph control** — explicit state schemas, conditional edges, checkpointing, time-travel — use LangGraph.
+- The problem is fundamentally **single-agent** — don't force the multi-agent pattern onto problems one well-prompted agent can solve.
+- You need **TypeScript** — CrewAI is Python-only.
 
 ---
 
-## 12. Glossary
+# Glossary
 
-|Term|Meaning|
+| Term | Meaning |
 |---|---|
-|**Agent**|An LLM with tools, instructions, and (optionally) memory and knowledge.|
-|**Team**|A coordinator-led group of agents collaborating on open-ended tasks.|
-|**Workflow**|A deterministic graph of `Step`s built from Parallel/Condition/Router/Loop.|
-|**Step**|A single workflow node — runs an agent, team, or function.|
-|**StepInput / StepOutput**|The data passed between steps. `StepInput` provides `get_step_content(name)` for accessing prior outputs.|
-|**AgentOS**|Agno's FastAPI runtime that exposes agents/teams/workflows as APIs.|
-|**Session**|A scoped conversation context, identified by `session_id`, persisted in your DB.|
-|**Memory**|Learned facts about a user (not raw history), persisted across sessions.|
-|**Knowledge**|RAG store — chunked, embedded documents the agent retrieves on demand.|
-|**MCP**|Model Context Protocol — a standard for exposing tools to LLMs via a server.|
-|**HITL**|Human-in-the-Loop — pausing a run for human confirmation, input, or external execution.|
-|**Tracing**|Structured logs of agent execution (steps, tools, tokens, timing) emitted automatically.|
-|**Guardrails**|Pre/post-execution checks for inputs and outputs (PII, prompt injection, policy).|
+| **Agent** | An LLM persona defined by role, goal, backstory, and tools. |
+| **Task** | A discrete unit of work with a description, expected output, and assigned agent. |
+| **Crew** | The orchestrator that binds agents, tasks, and a process type together. |
+| **Process** | Execution strategy: `sequential` (defined order) or `hierarchical` (manager LLM decides). |
+| **Tool** | A callable function an agent can invoke to act on the world. |
+| **Flow** | An event-driven pipeline using `@start`, `@listen`, `@router` class decorators. |
+| **kickoff()** | Starts a crew run; accepts `inputs={}` for variable injection into placeholders. |
+| **CrewOutput** | The return value of `kickoff()`, containing `.raw`, `.pydantic`, `.tasks_output`. |
+| **context** | Explicit list of prior tasks whose outputs are passed to a given task. |
+| **async_execution** | Task flag to run in parallel with other async tasks. |
+| **planning** | Optional pre-run LLM planning pass; uses a separate (often cheaper) `planning_llm`. |
+| **Short-term memory** | RAG-based in-run context store, cleared between runs. |
+| **Long-term memory** | SQLite-backed store of successful outcomes, persists across runs. |
+| **Entity memory** | In-run tracking of named entities (people, companies, concepts). |
+| **human_input** | Task flag that pauses execution at the CLI for operator review. |
 
 ---
 
-## Reading list (in priority order)
+# Where to go next
 
-1. **Agno docs — Quickstart:** [https://docs.agno.com/introduction/quickstart](https://docs.agno.com/introduction/quickstart)
-2. **The Five Levels of Agentic Software:** [https://www.agno.com/blog/the-5-levels-of-agentic-software-a-progressive-framework-for-building-reliable-ai-agents](https://www.agno.com/blog/the-5-levels-of-agentic-software-a-progressive-framework-for-building-reliable-ai-agents)
-3. **Workflows reference:** [https://docs.agno.com/reference/workflows/workflow](https://docs.agno.com/reference/workflows/workflow)
-4. **Memory overview:** [https://docs.agno.com/basics/memory/overview](https://docs.agno.com/basics/memory/overview)
-5. **AgentOS deployment guide:** [https://docs.agno.com/agent-os](https://docs.agno.com/agent-os)
-
-You're ready for the workshop. We'll build all three workflows from scratch, and every concept in this primer will show up at least once.
+1. **Quickstart:** https://docs.crewai.com/introduction
+2. **Core concepts — Agents, Tasks, Crews:** https://docs.crewai.com/concepts/agents
+3. **Process types:** https://docs.crewai.com/concepts/processes
+4. **Flows:** https://docs.crewai.com/concepts/flows
+5. **Memory:** https://docs.crewai.com/concepts/memory
+6. **Tool reference and crewai_tools:** https://docs.crewai.com/concepts/tools

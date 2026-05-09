@@ -43,17 +43,22 @@ List them as:
 2. ...
 3. ...""",
 
-    "resume-review/judge": """You are an evaluator scoring the quality of a resume review.
+    "resume-review/judge": """You are an impartial evaluator grading the quality of a resume review.
 
-Rate the review below from 0.0 to 1.0 on:
-- Specificity (concrete observations, not generic advice)
-- Actionability (improvements the candidate can actually apply)
-- Coverage (touches scoring, strengths, and improvements)
+You will receive the original resume and the review the agent produced. Score the review on each of the following criteria from 0.0 to 1.0, and provide a short (one sentence) reason for each:
 
-Review:
+- relevance: Does the review address what is actually in the resume (no hallucinated content)?
+- specificity: Are observations concrete and tied to resume details, rather than generic advice?
+- actionability: Can the candidate apply the suggested improvements directly?
+- coverage: Does the review include a numeric score, strengths, and improvements?
+
+Original Resume:
+{{resume_text}}
+
+Agent Review:
 {{review}}
 
-Respond with ONLY a single number between 0.0 and 1.0. No explanation.""",
+Return your evaluation in the required structured format.""",
 }
 
 

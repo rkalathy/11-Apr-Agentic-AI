@@ -1,5 +1,6 @@
 import re
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langchain_core.messages import AIMessage
@@ -48,6 +49,26 @@ agent = create_react_agent(
 )
 
 
+class CriterionScore(BaseModel):
+    score: float = Field(ge=0.0, le=1.0, description="Score between 0.0 and 1.0")
+    reason: str = Field(description="One sentence justification")
+
+
+class JudgeVerdict(BaseModel):
+    relevance: CriterionScore
+    specificity: CriterionScore
+    actionability: CriterionScore
+    coverage: CriterionScore
+
+
+judge_llm = llm.with_structured_output(JudgeVerdict)
+
+
+def llm_judge(resume_text: str, review: str) -> JudgeVerdict:
+    prompt = render("resume-review/judge", resume_text=resume_text, review=review)
+    return judge_llm.invoke(prompt)
+
+
 def extract_resume_score(text: str) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*10", text)
     return float(match.group(1)) if match else None
@@ -62,15 +83,7 @@ def tools_called(messages) -> set[str]:
     return called
 
 
-def judge_quality(review: str) -> float | None:
-    raw = llm.invoke(render("resume-review/judge", review=review)).content
-    match = re.search(r"\d+(?:\.\d+)?", raw)
-    if not match:
-        return None
-    return max(0.0, min(1.0, float(match.group(0))))
-
-
-def score_run(trace_id: str, messages, final_output: str):
+def score_run(trace_id: str, messages, resume_text: str, final_output: str):
     resume_score = extract_resume_score(final_output)
     if resume_score is not None:
         langfuse.create_score(
@@ -82,24 +95,41 @@ def score_run(trace_id: str, messages, final_output: str):
         )
 
     called = tools_called(messages)
-    complete = EXPECTED_TOOLS.issubset(called)
     langfuse.create_score(
         trace_id=trace_id,
         name="tools_completeness",
-        value=complete,
+        value=EXPECTED_TOOLS.issubset(called),
         data_type="BOOLEAN",
         comment=f"Called: {sorted(called)}; expected: {sorted(EXPECTED_TOOLS)}",
     )
 
-    quality = judge_quality(final_output)
-    if quality is not None:
+    verdict = llm_judge(resume_text, final_output)
+    for criterion, result in verdict.model_dump().items():
         langfuse.create_score(
             trace_id=trace_id,
-            name="review_quality",
-            value=quality,
+            name=f"judge_{criterion}",
+            value=result["score"],
             data_type="NUMERIC",
-            comment="LLM-as-judge rating (0.0-1.0) on specificity, actionability, coverage",
+            comment=result["reason"],
         )
+
+    avg = sum(c["score"] for c in verdict.model_dump().values()) / 4
+    langfuse.create_score(
+        trace_id=trace_id,
+        name="judge_overall",
+        value=avg,
+        data_type="NUMERIC",
+        comment="Mean of relevance, specificity, actionability, coverage",
+    )
+
+
+def run_agent(resume_text: str) -> tuple[str, set[str]]:
+    """Invoke the agent without attaching scores. Used by experiments."""
+    result = agent.invoke(
+        {"messages": [("human", f"Please review this resume:\n\n{resume_text}")]},
+        config={"callbacks": [langfuse_handler]},
+    )
+    return result["messages"][-1].content, tools_called(result["messages"])
 
 
 def review_resume(resume_text: str) -> str:
@@ -110,7 +140,7 @@ def review_resume(resume_text: str) -> str:
     final_output = result["messages"][-1].content
     trace_id = langfuse_handler.last_trace_id
     if trace_id:
-        score_run(trace_id, result["messages"], final_output)
+        score_run(trace_id, result["messages"], resume_text, final_output)
     langfuse.flush()
     return final_output
 

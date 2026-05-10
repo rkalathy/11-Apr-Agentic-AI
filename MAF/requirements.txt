@@ -1,0 +1,4 @@
+agent-framework
+openai
+numpy
+python-dotenv

@@ -1,0 +1,19 @@
+NimbusTech Inc.
+
+NimbusTech was founded in 2019 in Berlin by Lena Holtz and Dario Marini. The
+company builds developer tools for cloud-native observability. Headquarters
+are in Berlin with engineering hubs in Lisbon and Bangalore.
+
+As of Q1 2026 the company has 187 employees, of which 124 are engineers.
+NimbusTech raised a Series B of $42 million in October 2025 led by
+Northwind Ventures, with participation from Atlas Capital and existing
+investors. Total funding to date stands at $63 million.
+
+The leadership team:
+- CEO: Lena Holtz
+- CTO: Dario Marini
+- VP Engineering: Priya Iyer
+- VP Sales: Marcus Olufsen
+
+NimbusTech is bootstrapped on profitability for paid plans and runs a
+generous open-source tier under the Apache 2.0 license.

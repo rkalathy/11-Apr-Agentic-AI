@@ -1,0 +1,24 @@
+NimbusTech Product Overview
+
+The flagship product is Nimbus Observe, a unified platform for traces,
+metrics, and logs. It supports OpenTelemetry natively and ingests data over
+OTLP/gRPC and OTLP/HTTP. Default data retention is 30 days on the Pro plan
+and 13 months on the Enterprise plan.
+
+Pricing tiers (per month, billed annually):
+- Free: up to 5 GB ingest, 7-day retention, community support.
+- Pro: $89 per host, 30-day retention, email support.
+- Enterprise: custom pricing, 13-month retention, 24/7 SLA, dedicated CSM.
+
+Nimbus Observe ships SDKs for Go, Python, Java, Node.js, and Rust. The
+Python SDK is the most popular, accounting for roughly 41 percent of
+ingested spans across all customers.
+
+Integrations available out-of-the-box include AWS CloudWatch, GCP
+Operations Suite, Kubernetes, Kafka, and Postgres. A Slack integration for
+alerts ships with all paid plans.
+
+Known limitations as of v4.2 (March 2026):
+- No support for AWS GovCloud regions.
+- Trace sampling is configurable per service but not per endpoint.
+- The free tier does not support SSO.
